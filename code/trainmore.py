@@ -11,7 +11,6 @@ from model import Model
 from metrics import MovingAvg
 from vocab import Vocab
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('expdir', help='experiment directory')
 parser.add_argument('--data', type=str, action='append', dest='data',
@@ -23,7 +22,6 @@ parser.add_argument('--threads', type=int, default=12,
 args = parser.parse_args()
 
 expdir = args.expdir
-
 
 params = helper.GetParams(None, 'eval', args.expdir)
 
@@ -53,14 +51,14 @@ saver.restore(session, os.path.join(expdir, 'model.bin'))
 
 avg_loss = MovingAvg(0.97)
 for idx in range(300000):
-  feed_dict = dataset.GetFeedDict(model)
-  feed_dict[model.dropout_keep_prob] = params.dropout
-  c, _ = session.run([model.avg_loss, model.train_op], feed_dict)
-  cc = avg_loss.Update(c)
-  if idx % 20 == 0 and idx > 0:
-    val_c = session.run(model.avg_loss, valdata.GetFeedDict(model))
-    logging.info({'iter': idx, 'cost': cc, 'rawcost': c,
-                  'valcost': val_c})
-  if idx % 999 == 0:
-    saver.save(session, os.path.join(expdir, 'model2.bin'),
-               write_meta_graph=False)
+    feed_dict = dataset.GetFeedDict(model)
+    feed_dict[model.dropout_keep_prob] = params.dropout
+    c, _ = session.run([model.avg_loss, model.train_op], feed_dict)
+    cc = avg_loss.Update(c)
+    if idx % 20 == 0 and idx > 0:
+        val_c = session.run(model.avg_loss, valdata.GetFeedDict(model))
+        logging.info({'iter': idx, 'cost': cc, 'rawcost': c,
+                      'valcost': val_c})
+    if idx % 999 == 0:
+        saver.save(session, os.path.join(expdir, 'model2.bin'),
+                   write_meta_graph=False)
