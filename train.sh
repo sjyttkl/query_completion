@@ -2,6 +2,6 @@
 
 source ~/.bash_profile
 
-dir=/Users/songdongdong/PycharmProjects/query_completion/project
+dir=/Users/songdongdong/PycharmProjects/query_completion/model
 data=/Users/songdongdong/workSpace/datas/aol_search_query_logs/user-ct-test-collection-02.txt
 python code/trainer.py dir --data data

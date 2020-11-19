@@ -17,7 +17,7 @@ from vocab import Vocab
 
 parser = argparse.ArgumentParser()
 
-data_dir2 = "/Users/songdongdong/workSpace/datas/aol_search_query_logs/process/"
+# data_dir2 = "/Users/songdongdong/workSpace/datas/aol_search_query_logs/process/"
 data_dir = "/Users/songdongdong/workSpace/datas/query_completion_data/"
 dir = "/Users/songdongdong/PycharmProjects/query_completion/model"
 
@@ -40,14 +40,13 @@ parser.add_argument('--threads', type=int, default=12,
                     help='how many threads to use in tensorflow')
 args = parser.parse_args()
 
-
 # expdir = args.expdir
 expdir = dir
 if not os.path.exists(expdir):
     os.mkdir(expdir)
 else:
     for file in os.listdir(expdir):
-        file = expdir+"/"+file
+        file = expdir + "/" + file
         os.remove(file)
     os.removedirs(expdir)
 
@@ -101,7 +100,7 @@ for idx in range(params.iters):
         # gd = tf.graph_util.convert_variables_to_constants(sess, tf.get_default_graph().as_graph_def(), ['add'])
         # with tf.gfile.GFile('./tmodel/model.pb', 'wb') as f:
         #     f.write(gd.SerializeToString())
-        print(" 模型保持成功")
+        print("iter ", idx, "   模型保持成功")
 
 # if __name__ == "__main__":
 # ./ trainer.py / path / to / expdir - -data / path / to / data.tsv - -valdata / path / to / valdata.tsv
