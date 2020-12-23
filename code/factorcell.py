@@ -13,10 +13,23 @@ class FactorCell(tf.compat.v1.nn.rnn_cell.RNNCell):  # tf.nn.rnn_cell.RNNCell
             # compute the new W
             left_adapt = tf.squeeze(self.left_adapt)
             right_adapt = tf.squeeze(self.right_adapt)
-            final_w = self.W + tf.matmul(left_adapt, right_adapt)
-            lock_ops.append(self.lockedW.assign(final_w))
+            # final_w = self.W + tf.matmul(left_adapt, right_adapt)
+            final_w = tf.add(tf.matmul(left_adapt, right_adapt),self.W)
+            #self.lockedW = final_w
+            #lock_ops.append(self.lockedW)
+            # self.lockedW.assign(final_w)
+            #lock = tf.assign(self.lockedW, final_w) #您可以使用tf.identity取消引用_ref类型
+            self.lockedW = final_w
+            lock2 = tf.identity(self.lockedW)
+            lock_ops.append(lock2) #
         else:
-            lock_ops.append(self.lockedW.assign(self.W))
+            # self.lockedW = self.W
+            # lock_ops.append(self.lockedW)
+            lock3 = tf.assign(self.lockedW, self.W)
+            lock4 = tf.identity(self.lockedW)
+            lock_ops.append(lock4)
+
+            # lock_ops.append(self.lockedW.assign(self.W))
 
         if self.mikolov_adapt:
             final_bias = tf.squeeze(self.bias + self.delta)
@@ -24,7 +37,8 @@ class FactorCell(tf.compat.v1.nn.rnn_cell.RNNCell):  # tf.nn.rnn_cell.RNNCell
         else:
             lock_ops.append(self.lockedBias.assign(self.bias))
 
-        self.lock_op = tf.group(*lock_ops)
+        self.lock_op = tf.group(*lock_ops,name="lock_op")
+        
 
     def __init__(self, num_units, embedding_size, context_embed,
                  bias_adaptation=False, lowrank_adaptation=False,
@@ -40,16 +54,25 @@ class FactorCell(tf.compat.v1.nn.rnn_cell.RNNCell):  # tf.nn.rnn_cell.RNNCell
         input_size = num_units + embedding_size  # 512 + 24 = 536
 
         with tf.variable_scope('factor_cell'):
-            self.W = tf.get_variable('W', [input_size, 3 * self._num_units])  # 536 ,3*512
-            self.lockedW = tf.Variable(tf.zeros_like(self.W), name='lockedW',
-                                       collections=[tf.GraphKeys.LOCAL_VARIABLES],  # 存储在 局部变量中，不能进行分布式共享
-                                       trainable=False)
+            self.W = tf.get_variable('W', [input_size, 3 * self._num_units],
+                                     initializer=tf.constant_initializer(0.0, tf.float32))  # 536 ,3*512
+
+            # self.lockedW = tf.Variable(tf.zeros_like(self.W), name='lockedW',
+            #                            collections=[tf.GraphKeys.LOCAL_VARIABLES],  # 存储在 局部变量中，不能进行分布式共享
+            #                            trainable=False)
+
+            # self.lockedW = tf.compat.v1.placeholder(tf.float32, [input_size, 3 * self._num_units], name='lockedW')
+
 
             self.bias = tf.get_variable('bias', [3 * self._num_units],  # 3*513
                                         initializer=tf.constant_initializer(0.0, tf.float32))
             self.lockedBias = tf.Variable(tf.zeros_like(self.bias), name='lockedBias',
                                           collections=[tf.GraphKeys.LOCAL_VARIABLES],
                                           trainable=False)
+
+            # self.lockedBias = tf.compat.v1.placeholder(tf.float32,  [3 * self._num_units], name='lockedBias')
+
+
 
             if self.layer_norm:
                 self.gammas = []

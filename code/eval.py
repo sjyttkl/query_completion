@@ -9,7 +9,7 @@ data_dir = "/Users/songdongdong/workSpace/datas/query_completion_data/"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--expdir', help='experiment directory',
-                    default="/Users/songdongdong/PycharmProjects/query_completion/project")
+                    default="/Users/songdongdong/PycharmProjects/query_completion/model/1605774995")
 parser.add_argument('--data', type=str, action='append', dest='data', default=[data_dir + "queries07.test.txt.gz"],
                     help='where to load the data')
 parser.add_argument('--threads', type=int, default=12,

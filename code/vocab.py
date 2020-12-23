@@ -92,7 +92,7 @@ class Vocab(object):
         return self.LookupIdx(key)
 
     def __iter__(self):
-        word_list = [self.idx_to_word[x] for x in xrange(self.vocab_size)]
+        word_list = [self.idx_to_word[x] for x in range(0, self.vocab_size)]
         return word_list.__iter__()
 
     def __len__(self):

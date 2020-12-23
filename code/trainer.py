@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 
 # data_dir2 = "/Users/songdongdong/workSpace/datas/aol_search_query_logs/process/"
 data_dir = "/Users/songdongdong/workSpace/datas/query_completion_data/"
-dir = "/Users/songdongdong/PycharmProjects/query_completion/model"
+dir = "/Users/songdongdong/PycharmProjects/query_completion/model/"+str(int(time.time()))
 
 parser.add_argument('--expdir', help='experiment directory',
                     default=dir)

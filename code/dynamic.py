@@ -1,9 +1,9 @@
 from __future__ import print_function
 import argparse
 import numpy as np
-# import tensorflow as tf
-import tensorflow.compat.v1 as tf
-
+import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+import os
 import time
 import sys
 from beam import GetCompletions
@@ -14,11 +14,14 @@ from model import MetaModel
 
 # data_dir = "/Users/songdongdong/workSpace/datas/aol_search_query_logs/process/"
 data_dir = "/Users/songdongdong/workSpace/datas/query_completion_data/"
+# data_dir = "/home/jovyan/data/query_completion_data/"
+
+data_dir = "/home/jovyan/data/query_completion_data/weidian/"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--expdir', help='experiment directory',
-                    default="/Users/songdongdong/PycharmProjects/query_completion/project")
-parser.add_argument('--data', type=str, action='append', dest='data', default=[data_dir + "queries07.train.txt.gz"],
+                    default="/home/jovyan/project/query_completion/model/")
+parser.add_argument('--data', type=str, action='append', dest='data', default=[data_dir + "test"],
                     # ,data_dir+"queries07.dev.txt.gz",data_dir+"queries07.test.txt.gz"
                     help='where to load the data')
 parser.add_argument('--optimizer', default='ada',
@@ -69,7 +72,8 @@ class DynamicModel(MetaModel):
             opt_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "optimizer")
             if len(opt_vars):  # check if optimzer state needs resetting
                 self.reset_user_embed = tf.group(self.reset_user_embed,
-                                                 tf.variables_initializer(opt_vars))  # 这里的操作将会依次执行，没有返回值，因为这里是操作
+                                                 tf.variables_initializer(opt_vars),
+                                                 name="reset_user_embed")  # 这里的操作将会依次执行，没有返回值，因为这里是操作
 
     def Train(self, query, userid, hourofday, dayofweek, train=True):
         # If train is false then it will just do the forward pass
@@ -101,8 +105,15 @@ if __name__ == '__main__':
                  'adam': tf.train.AdamOptimizer,
                  'ada': tf.train.AdagradOptimizer,
                  'adadelta': tf.train.AdadeltaOptimizer}[args.optimizer]
-    # 这里其实包括了，对用户id进行初始化操作l
-    mLow = DynamicModel(args.expdir, learning_rate=args.learning_rate,
+
+    files = os.listdir(args.expdir)
+    files.sort()
+    print("使用的model 文件。", files[-1])
+
+    # 这里其实包括了，对用户id进行初始化操作
+    path = args.expdir + files[-1]
+    model_name = files[-1]
+    mLow = DynamicModel(path, learning_rate=args.learning_rate,
                         threads=args.threads, optimizer=optimizer)
     # print(mLow.user_vocab['<UNK>'])
     # print(mLow.user_vocab.word_to_idx)
@@ -127,36 +138,56 @@ if __name__ == '__main__':
                 continue
 
             start_time = time.time()
-            result = {'query': query, 'user': row.user, 'idx': i}
             # print(result)
             # run the beam search decoding
             if not args.tuning:
                 prefix_len = GetPrefixLen(row.user, query, i)  # query的前缀长度
                 prefix = row.query_[:prefix_len + 1]  # 前缀
+                result = {'query': query, "prefix": "".join(prefix), 'user': row.user, 'idx': i,
+                          "dayofweek": row.dayofweek, "hourofday": row.hourofday}
+
                 # print(prefix)
                 # print(user)
                 if user in mLow.user_vocab.word_to_idx:
                     user2 = mLow.user_vocab.word_to_idx[user]
                 else:
                     user2 = 0
-                b = GetCompletions(prefix, user2, mLow, branching_factor=4,
-                                   beam_size=100, stop=stop)  # always use userid=0
-                # print(b.size)
-                qlist = [''.join(q.words[1:-1]) for q in reversed(list(b))]
+                queue_item = GetCompletions(prefix, user2, row.dayofweek, row.hourofday, mLow, branching_factor=4,
+                                            beam_size=100, stop=stop)  # always use userid=0
+                # print(list(b))
+                # print("".join(b))
+                # print(str(b))
 
+                qlist = ["".join(q.words[1:-1]) for q in reversed(list(queue_item))]
+                #                 qlist = []
+                #                 for item in queue_item:
+                #                     res = ""
+                #                     for word in item.words[1:-1]:
+                #                         if type(word) == bytes:
+                #                             #word = str(word.decode("utf-8"))
+                #                             continue
+                #                         res = res + word
+                #                     qlist.append(res)
+                # qlist = reversed(qlist)
+                # print(qlist)
                 if args.partial and ' ' in query[prefix_len:]:
                     word_boundary = query[prefix_len:].index(' ')
                     query = query[:word_boundary + prefix_len]
                 score = GetRankInList(query, qlist)
-                result['user'] = user2
+                result['user2'] = user2
                 result['score'] = score
-                result['top_completion'] = qlist[0]
-                result['hourofday'] = grp.hourofday
-                result['dayofweek'] = grp.dayofweek
+                if result['prefix'][3:] == qlist[0]:  # <S>流量卡
+                    result['top_completion'] = qlist[1]
+                else:
+                    result['top_completion'] = qlist[0]
+                result['hourofday'] = row.hourofday
+                result['dayofweek'] = row.dayofweek
                 result['prefix_len'] = int(prefix_len)
+                result["completions_size"] = len(qlist)
+                # print(result)
             # print(i,len(grp)-1)
 
-            result['cost'], result['length'] = mLow.Train(row.query_, grp.hourofday, grp.dayofweek,
+            result['cost'], result['length'] = mLow.Train(row.query_, user2, row.hourofday, row.dayofweek,
                                                           train=i != len(grp) - 1)
             print(result)
             counter += 1
@@ -165,5 +196,14 @@ if __name__ == '__main__':
             if i % 25 == 0:
                 sys.stdout.flush()  # flush every so often
                 sys.stderr.write('{0}\n'.format(t))
+            if counter % 2000 == 0:  # save a model file every 2,000 minibatches
+
+                mLow.saver.save(mLow.session, os.path.join(args.expdir + "/dynamic_" + model_name, 'model.bin'),
+                                write_meta_graph=True, global_step=counter)
+                # gd = tf.graph_util.convert_variables_to_constants(sess, tf.get_default_graph().as_graph_def(), ['add'])
+                # with tf.gfile.GFile('./tmodel/model.pb', 'wb') as f:
+                #     f.write(gd.SerializeToString())
+                print("iter ", counter, "   模型保持成功")
+
         if counter > args.limit:
             break

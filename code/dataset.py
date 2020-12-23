@@ -68,10 +68,15 @@ class Dataset(object):
         dayofweek = np.zeros(self.batch_size)  # 需要迭代数据，user_id
         hourofday = np.zeros(self.batch_size)  # 需要迭代数据，user_id
 
+        lockedW = np.zeros([536, 3 * 512])
+        lockedBias = np.zeros([3 * 513])
+
         feed_dict = {
             model.queries: f1,
             model.query_lengths: grp.lengths.values,
             model.user_ids: user_ids,
+            model.decoder_cell.lockedW: lockedW
+
         }
         if model.use_time_features:
             # print(grp.dayofweek.values)
