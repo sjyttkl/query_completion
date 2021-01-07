@@ -12,6 +12,8 @@ from helper import GetPrefixLen
 from metrics import GetRankInList, MovingAvg
 from model import MetaModel
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
 # data_dir = "/Users/songdongdong/workSpace/datas/aol_search_query_logs/process/"
 data_dir = "/Users/songdongdong/workSpace/datas/query_completion_data/"
 # data_dir = "/home/jovyan/data/query_completion_data/"
@@ -71,9 +73,12 @@ class DynamicModel(MetaModel):
 
             opt_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "optimizer")
             if len(opt_vars):  # check if optimzer state needs resetting
-                self.reset_user_embed = tf.group(self.reset_user_embed,
-                                                 tf.variables_initializer(opt_vars),
+                self.reset_user_embed = tf.tuple([self.reset_user_embed,
+                                                  tf.variables_initializer(opt_vars)],
                                                  name="reset_user_embed")  # 这里的操作将会依次执行，没有返回值，因为这里是操作
+
+    #                 self.reset_user_embed = tf.group(self.reset_user_embed,
+    #                                                  tf.variables_initializer(opt_vars),name="reset_user_embed")  # 这里的操作将会依次执行，没有返回值，因为这里是操作
 
     def Train(self, query, userid, hourofday, dayofweek, train=True):
         # If train is false then it will just do the forward pass
@@ -108,11 +113,11 @@ if __name__ == '__main__':
 
     files = os.listdir(args.expdir)
     files.sort()
-    print("使用的model 文件。", files[-1])
+    print("使用的model 文件。", files[-2])
 
     # 这里其实包括了，对用户id进行初始化操作
-    path = args.expdir + files[-1]
-    model_name = files[-1]
+    path = args.expdir + files[-2]
+    model_name = files[-2]
     mLow = DynamicModel(path, learning_rate=args.learning_rate,
                         threads=args.threads, optimizer=optimizer)
     # print(mLow.user_vocab['<UNK>'])

@@ -49,7 +49,8 @@ class MetaModel(object):
         with self.graph.as_default():
             self.saver = tf.train.Saver(tf.trainable_variables())
             self.session.run(tf.global_variables_initializer())
-            self.saver.restore(self.session, os.path.join(self.expdir, 'model.bin-536000'))
+            self.session.run(tf.local_variables_initializer())
+            self.saver.restore(self.session, os.path.join(self.expdir, 'model.bin-238000'))
 
     def MakeSessionAndRestore(self, threads=8):
         self.MakeSession(threads)

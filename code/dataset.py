@@ -26,7 +26,7 @@ def LoadData(filenames, split=True):
     dfs = []
     for filename in filenames:
         df = pandas.read_csv(filename, compression='gzip', sep='\t', header=None)  # gzip
-
+        df = df[:1000]
         df.columns = ['user', 'query_', 'date']
         if split:
             df['query_'] = df.query_.apply(Prepare)

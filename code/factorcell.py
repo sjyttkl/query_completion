@@ -37,8 +37,9 @@ class FactorCell(tf.compat.v1.nn.rnn_cell.RNNCell):  # tf.nn.rnn_cell.RNNCell
         else:
             lock_ops.append(self.lockedBias.assign(self.bias))
 
-        self.lock_op = tf.group(*lock_ops,name="lock_op")
-        
+        # self.lock_op = tf.group(*lock_ops,name="lock_op") # 没有返回值，只是个op
+        self.lock_op = tf.tuple(lock_ops,name="lock_op") #返回的是list of tensor。
+
 
     def __init__(self, num_units, embedding_size, context_embed,
                  bias_adaptation=False, lowrank_adaptation=False,
@@ -57,9 +58,9 @@ class FactorCell(tf.compat.v1.nn.rnn_cell.RNNCell):  # tf.nn.rnn_cell.RNNCell
             self.W = tf.get_variable('W', [input_size, 3 * self._num_units],
                                      initializer=tf.constant_initializer(0.0, tf.float32))  # 536 ,3*512
 
-            # self.lockedW = tf.Variable(tf.zeros_like(self.W), name='lockedW',
-            #                            collections=[tf.GraphKeys.LOCAL_VARIABLES],  # 存储在 局部变量中，不能进行分布式共享
-            #                            trainable=False)
+            self.lockedW = tf.Variable(tf.zeros_like(self.W), name='lockedW',
+                                       collections=[tf.GraphKeys.LOCAL_VARIABLES],  # 存储在 局部变量中，不能进行分布式共享
+                                       trainable=False)
 
             # self.lockedW = tf.compat.v1.placeholder(tf.float32, [input_size, 3 * self._num_units], name='lockedW')
 

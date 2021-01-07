@@ -55,7 +55,8 @@ class Restore_Model:
         saver.restore(self.sess, tf.train.latest_checkpoint(self.expdir))  # 输入路径即可
         # saver.restore(self.sess, os.path.join(self.expdir, model_name))
         # tf.saved_model.loader.load(self.sess, [tf.saved_model.tag_constants.SERVING], '../export_dir/0/')
-
+        for oper in graph.get_operations():
+            print(oper)
         self.querys = graph.get_tensor_by_name("queries:0")
         self.query_length = graph.get_tensor_by_name("query_lengths:0")
         self.user_ids = graph.get_tensor_by_name("user_ids:0")
@@ -67,8 +68,10 @@ class Restore_Model:
         self.beam_chars = graph.get_tensor_by_name("beam_chars:0")
         self.next_hidden_state = graph.get_tensor_by_name("next_hidden_state:0")  # output
         self.top_k = graph.get_tensor_by_name("top_k:0")
-        self.lock_op = graph.get_operation_by_name("rnn/factor_cell/lock_op")
-        self.reset_user_embed = graph.get_operation_by_name("reset_user_embed")
+        # self.lock_op = graph.get_operation_by_name("rnn/factor_cell/lock_op")
+        self.lock_op = graph.get_tensor_by_name("rnn/factor_cell/lock_op/control_dependency:0")
+        # self.reset_user_embed = graph.get_operation_by_name("reset_user_embed")
+        self.reset_user_embed = graph.get_tensor_by_name("reset_user_embed/control_dependency:0")
         self.train_op = graph.get_operation_by_name("optimizer/NoOp")  # train_op
         self.avg_loss = graph.get_tensor_by_name("avg_loss:0")
         self.prev_hidden_state = graph.get_tensor_by_name("prev_hidden_state:0")
@@ -79,8 +82,127 @@ class Restore_Model:
                           self.keep_prob: 1.0,
                           self.beam_size: 8.0}
         self.feed_dict_pre = feed_dict_pre
-        # for oper in graph.get_operations():
-        #     print(oper)
+#         for oper in graph.get_operations():
+#             print(oper)
+
+    def signature(self,function_dict):
+        signature_dict = {}
+        for k, v in function_dict.items():
+            if k=="reset_user_embed":
+                outputs = {k: v for k, v in v['outputs'].items()}
+                signature_dict[k] = tf.saved_model.build_signature_def( outputs=outputs,
+                                                                       method_name=v['method_name'])
+            else:
+                inputs = {k: v for k, v in v['inputs'].items()}
+                outputs = {k: v for k, v in v['outputs'].items()}
+                signature_dict[k] = tf.saved_model.build_signature_def(inputs=inputs, outputs=outputs,
+                                                                   method_name=v['method_name'])
+        return signature_dict
+
+    def save_model_serving(self, pb_model_path, pb_model_name):
+
+        # for fixing the bug of batch norm
+        gd = self.sess.graph.as_graph_def()
+        # convert_variables_to_constants 需要指定output_node_names，list()，可以多个
+        # graph_util.convert_variables_to_constants
+        # fix nodes
+        #
+        # self.sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])  # 这里需要初始化全局变量和局部变量
+
+        for node in gd.node:
+            if node.op == 'RefSwitch':
+                node.op = 'Switch'
+                for index in range(len(node.input)):
+                    if 'moving_' in node.input[index]:
+                        node.input[index] = node.input[index] + '/read'
+            elif node.op == 'AssignSub':
+                node.op = 'Sub'
+                if 'use_locking' in node.attr: del node.attr['use_locking']
+            # elif node.op == 'ScatterUpdate':
+            #     node.op = 'Update'
+            #     if 'use_locking' in node.attr: del node.attr['use_locking']
+            elif node.op == 'Assign':
+                node.op = 'Identity'
+                if 'use_locking' in node.attr: del node.attr['use_locking']
+                if 'validate_shape' in node.attr: del node.attr['validate_shape']
+                if len(node.input) == 2:
+                    # input0: ref: Should be from a Variable node. May be uninitialized.
+                    # input1: value: The value to be assigned to the variable.
+                    node.input[0] = node.input[1]
+                    del node.input[1]
+            elif node.op == 'AssignAdd':
+                node.op = 'Add'
+                if 'use_locking' in node.attr: del node.attr['use_locking']
+            # else:
+            # print(node.op, "->" ,node.name)
+        # output_node_names = [n.name for n in gd.node]
+        # print(output_node_names)
+
+        # elif node.op == '':
+        constant_graph = graph_util.convert_variables_to_constants(self.sess, gd,
+                                                                   ["rnn/factor_cell/lock_op/control_dependency", 'next_hidden_state',
+                                                                    "avg_loss", "beam_chars", "top_k",
+                                                                    "optimizer/NoOp","reset_user_embed/control_dependency"])  # "reset_user_embed"
+        # # self.run_reset_user_embed()
+        # self.Lock()
+        # queue_item2 = self.getCompletion_beam(beam_size=100, branching_factor=4, stop="</S>")
+        # qlist = ["".join(q.words[1:-1]) for q in reversed(list(queue_item2))]
+
+        # print(qlist)
+        # tf.train.write_graph(constant_graph, "/Users/songdongdong/PycharmProjects/query_completion/pb_model",
+        #                      "model.pb", as_text=False)
+        # tf.train.write_graph(constant_graph, "/Users/songdongdong/PycharmProjects/query_completion/pb_model",
+        #                      "model.pb.txt", as_text=True)
+
+        # 写入序列化的 PB 文件
+        with tf.gfile.GFile(pb_model_path + pb_model_name, mode='wb') as f:
+            f.write(constant_graph.SerializeToString())
+        print("%d ops in the final graph." % len(gd.node))  # 2040 ops in the final graph.
+
+        signature_def_map = self.signature({
+            "reset_user_embed":{
+                "outputs":{"reset_user_embed":tf.saved_model.utils.build_tensor_info(self.reset_user_embed)},
+                "method_name": tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+
+            },
+            "lock":{"inputs":{"user_ids": tf.saved_model.utils.build_tensor_info(self.user_ids),
+                              "hourofday":tf.saved_model.utils.build_tensor_info(self.hourofday),
+                              "dayofweek":tf.saved_model.utils.build_tensor_info(self.dayofweek)},
+                    "outputs":{ 'lock_op': tf.saved_model.build_tensor_info(self.lock_op)
+                               #'lock_op':tf.load_op_library(self.lock_op)
+                                 },
+
+                    "method_name": tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+                    },
+            "initBeam":{"inputs":{"prev_hidden":tf.saved_model.utils.build_tensor_info(self.prev_hidden_state),
+                        "prev_word":tf.saved_model.utils.build_tensor_info(self.prev_word),
+                        "beam_size":tf.saved_model.utils.build_tensor_info(self.beam_size)},
+                        "outputs":{"next_hidden_state":tf.saved_model.utils.build_tensor_info(self.next_hidden_state)},
+                        "method_name": tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+                        },
+            "decode":{"inputs":{"prev_word":tf.saved_model.utils.build_tensor_info(self.prev_word),
+                                "prev_hidden":tf.saved_model.utils.build_tensor_info(self.prev_hidden_state),
+                                "beam_size":tf.saved_model.utils.build_tensor_info(self.beam_size)},
+                      "outputs":{
+                          "beam_chars":tf.saved_model.utils.build_tensor_info(self.beam_chars),
+                          "top_k":tf.saved_model.utils.build_tensor_info(self.top_k),
+                          "next_hidden_state":tf.saved_model.utils.build_tensor_info(self.next_hidden_state)},
+                      "method_name": tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+                      }
+        })
+        # initializer = tf.group([tf.global_variables_initializer(),tf.local_variables_initializer()])
+
+        legacy_init_op = tf.group(tf.tables_initializer(), name='legacy_init_op')
+
+        builder = tf.saved_model.builder.SavedModelBuilder(pb_model_path + "/saved_model_serving2")
+        # 官网有误，写成了 saved_model_builder
+        # 构造模型保存的内容，指定要保存的 session，特定的 tag,
+        # 输入输出信息字典，额外的信息
+        builder.add_meta_graph_and_variables(self.sess, tags=[tf.saved_model.tag_constants.SERVING],
+                                             signature_def_map=signature_def_map
+                                             )
+
+        builder.save()
 
     def save_model_pb(self, pb_model_path, pb_model_name):
 
@@ -125,7 +247,7 @@ class Restore_Model:
         constant_graph = graph_util.convert_variables_to_constants(self.sess, gd,
                                                                    ["rnn/factor_cell/lock_op", 'next_hidden_state',
                                                                     "avg_loss", "beam_chars", "top_k",
-                                                                    "optimizer/NoOp"]) #"reset_user_embed"
+                                                                    "optimizer/NoOp"])  # "reset_user_embed"
         # self.run_reset_user_embed()
         # self.Lock()
         # queue_item2 = self.getCompletion_beam(beam_size=100, branching_factor=4, stop="</S>")
@@ -170,19 +292,20 @@ class Restore_Model:
             'top_k': tf.saved_model.utils.build_tensor_info(self.top_k),
         }
 
-
         builder = tf.saved_model.builder.SavedModelBuilder(pb_model_path + "/saved_model_serving")
-        queryCompletion_signature = tf.saved_model.signature_def_utils.build_signature_def(inputs, outputs, tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
-
+        queryCompletion_signature = tf.saved_model.signature_def_utils.build_signature_def(inputs, outputs,
+                                                                                           tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
+        labeling_signature = (queryCompletion_signature)
         # 官网有误，写成了 saved_model_builder
         # 构造模型保存的内容，指定要保存的 session，特定的 tag,
         # 输入输出信息字典，额外的信息
-        builder.add_meta_graph_and_variables(self.sess, tags=[tf.saved_model.tag_constants.SERVING],signature_def_map={tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: queryCompletion_signature})
+        builder.add_meta_graph_and_variables(self.sess, tags=[tf.saved_model.tag_constants.SERVING], signature_def_map={
+            tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: labeling_signature})
 
         builder.save()
 
     def run_reset_user_embed(self):
-        self.sess.run(self.reset_user_embed,) #这里传不传值都是i无所谓的{self.user_ids: [0]}
+        self.sess.run(self.reset_user_embed, )  # 这里传不传值都是i无所谓的{self.user_ids: [0]}
 
     def Lock(self):
         # --------   Lock  --------
@@ -228,7 +351,7 @@ class Restore_Model:
             prev_words = np.array([self.vocab_char.word_to_idx[item.words[-1]] for item in current_nodes])
             # print("prev_words  ",prev_words)
             print("prev_hidden shape   ", prev_hidden.shape, "  prev_hidden :    ")
-            print("prev_words shape   ", prev_words.shape, " prev_words :   ",prev_words)
+            print("prev_words shape   ", prev_words.shape, " prev_words :   ", prev_words)
             # 喂到解码器里
             feed_dict = {
                 self.prev_word: prev_words,
@@ -240,9 +363,9 @@ class Restore_Model:
                 feed_dict)
             current_char_p = -current_char_p
             print(current_char[0][1])
-            print(current_char,current_char.shape) #(1, 4),(4, 4) ==>(?,4)
-            print(current_char_p,current_char_p.shape) # (1, 4),(4, 4)==>(?,4)
-            print(prev_hidden,prev_hidden.shape) #(1,1024),(4, 1024)==>(?,1024)
+            print(current_char, current_char.shape)  # (1, 4),(4, 4) ==>(?,4)
+            print(current_char_p, current_char_p.shape)  # (1, 4),(4, 4)==>(?,4)
+            print(prev_hidden, prev_hidden.shape)  # (1,1024),(4, 1024)==>(?,1024)
             for i, node in enumerate(current_nodes):
                 for new_word, top_value in zip(current_char[i, :], current_char_p[i, :]):
                     new_cost = top_value + node.log_probs
@@ -277,12 +400,15 @@ class Restore_Model:
     #     print(oper)
 
 
-def save_vocab(filename,save_path,dic_path):
-    with open(save_path+filename + '.json', 'a') as outfile:
+def save_vocab(filename, save_path, dic_path):
+    with open(save_path + filename + '.json', 'a') as outfile:
         json.dump(dic_path, outfile, ensure_ascii=True)
         outfile.write('\n')
 
+
 import json
+
+
 def restore_vocab(expdir, vocab_name):
     with open(expdir + vocab_name, 'rb') as f:
         v = pickle.load(f)
@@ -461,8 +587,8 @@ class Load_pb:
 
 
 if __name__ == "__main__":
-    expdir = "/Users/songdongdong/PycharmProjects/query_completion/model/dynamic_1607270485/"
-    model_name = "model.bin-318000.meta"
+    expdir = "/home/jovyan/project/query_completion/model/dynamic_1609935328/"
+    model_name = "model.bin-2000.meta"
 
     # 字典恢复
     vocab_char = restore_vocab(expdir, "char_vocab.pickle")
@@ -491,8 +617,8 @@ if __name__ == "__main__":
     model = Restore_Model(expdir, model_name, vocab_char, user_vocab)
     model.restore_tensor(feed_dict_pre)
 
-    model.run_reset_user_embed()
-    model.Lock()
+    # model.run_reset_user_embed()
+    # model.Lock()
     queue_item2 = model.getCompletion_beam(beam_size=100, branching_factor=4, stop="</S>")
     qlist = ["".join(q.words[1:-1]) for q in reversed(list(queue_item2))]
     print(qlist)
@@ -511,9 +637,10 @@ if __name__ == "__main__":
 
     print(model.train(True))
 
-    pb_model_path = "/Users/songdongdong/PycharmProjects/query_completion/pb_model/"
+    pb_model_path = "/home/jovyan/project/query_completion/pb_model/"
     pb_model_name = "saved_model.pb"
-    model.save_model_pb(pb_model_path, pb_model_name)
+    # model.save_model_pb(pb_model_path, pb_model_name)
+    model.save_model_serving(pb_model_path, pb_model_name)
     load_pb = Load_pb(pb_model_path + pb_model_name, vocab_char, user_vocab)
     # load_pb.run_model_pb(feed_dict_pre)
 

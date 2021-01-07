@@ -10,8 +10,8 @@
 ==================================================
 """
 
-import tensorflow.compat.v1 as tf
-
+# import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from helper import GetPrefixLen
 from metrics import GetRankInList, MovingAvg
 from beam import BeamItem, BeamQueue
@@ -62,7 +62,7 @@ class Load_pb:
             # group together all the nodes in the queue for efficient computation
             prev_hidden = np.vstack([item.prev_hidden for item in current_nodes])
             prev_words = np.array([self.vocab_char.word_to_idx[item.words[-1]] for item in current_nodes])
-            print(prev_words)
+            # print(prev_words)
             # print("prev_words  ",prev_words)
             # 喂到解码器里
             self.feed_dict = {
@@ -152,8 +152,8 @@ class Load_pb:
         self.train_op = self.sess.graph.get_operation_by_name("optimizer/NoOp")  # train_op
         self.avg_loss = self.sess.graph.get_tensor_by_name("avg_loss:0")
         self.prev_hidden_state = self.sess.graph.get_tensor_by_name("prev_hidden_state:0")
-        for op in self.sess.graph.get_operations():
-            print(op.name, op.values())
+        # for op in self.sess.graph.get_operations():
+        #     print(op.name, op.values())
         # self.sess.run(self.reset_user_embed)
 
         self.feed_dict = {self.querys: feed_dict_pre['prefix'],
@@ -212,6 +212,7 @@ class Load_pb:
         print(self.sess.run(queries))
         # print(sess.run(y, feed_dict={X: [3., 2., 1.]}))
 
+
     def run_model_pb_serving (self, feed_dict_pre,pb_model_serving):
 
         self.sess = tf.Session()
@@ -234,15 +235,17 @@ class Load_pb:
         self.beam_chars = self.sess.graph.get_tensor_by_name("beam_chars:0")
         self.next_hidden_state = self.sess.graph.get_tensor_by_name("next_hidden_state:0")  # output
         self.top_k = self.sess.graph.get_tensor_by_name("top_k:0")
-        self.lock_op = self.sess.graph.get_operation_by_name("rnn/factor_cell/lock_op")
-        self.reset_user_embed = self.sess.graph.get_operation_by_name("reset_user_embed")
+        # self.lock_op = self.sess.graph.get_operation_by_name("rnn/factor_cell/lock_op")
+        self.lock_op = self.sess.graph.get_tensor_by_name("rnn/factor_cell/lock_op/control_dependency:0")
+        # self.reset_user_embed = self.sess.graph.get_operation_by_name("reset_user_embed")
+        self.reset_user_embed = self.sess.graph.get_tensor_by_name("reset_user_embed/control_dependency:0")
         self.train_op = self.sess.graph.get_operation_by_name("optimizer/NoOp")  # train_op
         self.avg_loss = self.sess.graph.get_tensor_by_name("avg_loss:0")
         self.prev_hidden_state = self.sess.graph.get_tensor_by_name("prev_hidden_state:0")
         # for op in self.sess.graph.get_operations():
-        #     print(op.name, op.values())
+            # print(op.name, op.values())
 
-        # self.sess.run(self.reset_user_embed)
+        self.sess.run(self.reset_user_embed)
 
         self.feed_dict = {self.querys: feed_dict_pre['prefix'],
                           self.user_ids: [feed_dict_pre['user']],
@@ -271,7 +274,7 @@ class Load_pb:
         # score = GetRankInList(feed_dict_pre["query"], qlist)
         # feed_dict_pre['user'] = feed_dict_pre["user"]
         # feed_dict_pre['score'] = score
-        # feed_dict_pre['top_completion'] = qlist[0]
+        feed_dict_pre['top_completion'] = qlist[0]
         # feed_dict_pre['hourofday'] = feed_dict_pre["hourofday"]
         # feed_dict_pre['dayofweek'] = feed_dict_pre["dayofweek"]
         # feed_dict_pre['prefix_len'] = int(prefix_len)
@@ -320,9 +323,8 @@ def restore_vocab(expdir, vocab_name):
     return v
 
 if __name__ == "__main__":
-    expdir = "/Users/songdongdong/PycharmProjects/query_completion/model/dynamic_1607270485/"
-    model_name = "model.bin-318000.meta"
-
+    expdir = "/home/jovyan/project/query_completion/model/dynamic_1609935328/"
+    model_name = "model.bin-2000.meta"
     # # 字典恢复
     vocab_char = restore_vocab(expdir, "char_vocab.pickle")
     print(vocab_char.word_to_idx['<S>'])
@@ -349,10 +351,10 @@ if __name__ == "__main__":
     feed_dict_pre = {'prefix': prefix, 'user': "sw996641", "hourofday": [14], "dayofweek": [3], "query_": query_,
                      "query": query, "prefix_len": prefix_len, }
 
-    pb_model_path = "/Users/songdongdong/PycharmProjects/query_completion/pb_model/"
+    pb_model_path = "/home/jovyan/project/query_completion/pb_model/"
     pb_model_name = "saved_model.pb"
-    pb_model_serving = "saved_model_serving"
+    pb_model_serving = "saved_model_serving2"
     load_pb = Load_pb(pb_model_path, pb_model_name,vocab_char, user_vocab)
-    load_pb.run_model_pb(feed_dict_pre)
-    # load_pb.run_model_pb_serving(feed_dict_pre,pb_model_serving)
+    # load_pb.run_model_pb(feed_dict_pre)
+    load_pb.run_model_pb_serving(feed_dict_pre,pb_model_serving)
     # load_pb.run_model_pb_serving2(feed_dict_pre,pb_model_serving)
