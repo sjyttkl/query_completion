@@ -7,7 +7,7 @@
    email:         songdongdong@weidian.com
    Author :       songdongdong
    date：          2020/12/1 15:31
-   Description :  
+   Description :   保存模型，包括tensor serving 模型
 ==================================================
 """
 import tensorflow.compat.v1 as tf

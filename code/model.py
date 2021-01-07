@@ -181,7 +181,7 @@ class Model(object):
         self.next_log_prob = tf.nn.log_softmax(logits / self.temperature)
 
         # return the top `beam_size` number of characters for use in decoding
-        self.beam_size = tf.placeholder_with_default(1, (), name='beam_size')
+        self.beam_size = tf.placeholder_with_default(1, (), name='beam_size') #这里其实可以使用scalar ，不需要tensor 在tensor serving 使用的时候
         log_probs, self.selected = tf.nn.top_k(self.next_log_prob, self.beam_size,name="top_k")
         self.selected_p = -log_probs  # cost is the negative log likelihood
         #selected_p = tf.compat.v1.get_variable("selected_p2",-log_probs)
